@@ -140,38 +140,6 @@
     "report": {
       "type": "string",
       "maxLength": 4000
-    },
-    "stance": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "position": {
-          "type": "string",
-          "enum": [
-            "agree",
-            "disagree",
-            "revised"
-          ]
-        },
-        "verdict": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "return",
-            "reject"
-          ]
-        },
-        "notes": {
-          "type": "array",
-          "maxItems": 30,
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "position"
-      ]
     }
   },
   "required": [

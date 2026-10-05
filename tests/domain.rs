@@ -373,102 +373,141 @@ fn delegation_roles_are_checked_against_the_scope() {
     assert_eq!(role, &json!(["", "general"]));
 }
 
-/// A stance is optional: older workers omit it and the driver reads that as
-/// `disagree` / `return`; values outside the enums are rejected.
+/// `annotations` is optional and host-defined: absent from older workers,
+/// round-tripped as given, never a field core reads.
 #[test]
-fn worker_results_round_trip_with_and_without_a_stance() {
-    use fridica_core::worker::{Position, Stance, Verdict, WorkerResult};
+fn worker_results_round_trip_with_and_without_annotations() {
+    use fridica_core::worker::WorkerResult;
     let plain: WorkerResult =
         serde_json::from_value(json!({"status":"done","summary":"ok"})).unwrap();
-    assert_eq!(plain.stance, None);
-    assert_eq!(
-        (plain.position(), plain.verdict()),
-        (Position::Disagree, Verdict::Return)
-    );
+    assert_eq!(plain.annotations, None);
     let value = serde_json::to_value(&plain).unwrap();
-    assert!(value.get("stance").is_none());
+    assert!(value.get("annotations").is_none());
     assert_eq!(
         serde_json::from_value::<WorkerResult>(value).unwrap(),
         plain
     );
 
-    let with: WorkerResult = serde_json::from_value(json!({"status":"done","summary":"ok",
-        "stance":{"position":"revised","verdict":"pass","notes":["tightened the bound"]}}))
-    .unwrap();
+    let fields = json!({"confidence":0.8,"labels":["a","b"],"nested":{"k":[1,null,true]}});
+    let with: WorkerResult =
+        serde_json::from_value(json!({"status":"done","summary":"ok","annotations":fields}))
+            .unwrap();
     assert_eq!(
-        with.stance,
-        Some(Stance {
-            position: Position::Revised,
-            verdict: Some(Verdict::Pass),
-            notes: vec!["tightened the bound".into()],
-        })
+        with.annotations.clone().map(Into::into),
+        Some(fields.clone())
     );
-    assert_eq!(
-        (with.position(), with.verdict()),
-        (Position::Revised, Verdict::Pass)
-    );
-    let back: WorkerResult = serde_json::from_value(serde_json::to_value(&with).unwrap()).unwrap();
-    assert_eq!(back, with);
-    let agree: WorkerResult = serde_json::from_value(
-        json!({"status":"done","summary":"ok","stance":{"position":"agree"}}),
-    )
-    .unwrap();
-    assert_eq!(
-        (agree.position(), agree.verdict()),
-        (Position::Agree, Verdict::Return)
-    );
-
-    for position in ["agree", "disagree", "revised"] {
-        assert!(serde_json::from_value::<Position>(json!(position)).is_ok());
-    }
-    for verdict in ["pass", "return", "reject"] {
-        assert!(serde_json::from_value::<Verdict>(json!(verdict)).is_ok());
-    }
-    for stance in [
-        json!({"position":"maybe"}),
-        json!({"position":"agree","verdict":"approve"}),
-        json!({"position":"Agree"}),
-    ] {
+    let value = serde_json::to_value(&with).unwrap();
+    assert_eq!(value["annotations"], fields);
+    assert_eq!(serde_json::from_value::<WorkerResult>(value).unwrap(), with);
+    for bad in [json!("text"), json!([1]), json!(3)] {
         assert!(serde_json::from_value::<WorkerResult>(
-            json!({"status":"done","summary":"ok","stance":stance})
+            json!({"status":"done","summary":"ok","annotations":bad})
         )
         .is_err());
     }
+}
 
-    // The tolerant parser keeps a valid stance, drops an invalid position, and
-    // repairs field by field: a bad verdict is dropped and the position kept.
-    let parsed = result::parse(
-        "```json\n{\"status\":\"done\",\"summary\":\"ok\",\"stance\":{\"position\":\"revised\",\"verdict\":\"approve\",\"notes\":[\"n\",1]}}\n```",
-    )
-    .unwrap();
+/// The tolerant parser keeps valid annotations and drops invalid ones (not an
+/// object, or over a cap) with the rest of the result kept.
+#[test]
+fn the_tolerant_parser_drops_invalid_annotations_and_keeps_the_rest() {
+    let parse = |annotations: serde_json::Value| {
+        let text = json!({"status":"done","summary":"ok","report":"posted",
+            "unresolved":["one"],"annotations":annotations});
+        result::parse(&format!("```json\n{text}\n```")).unwrap()
+    };
+    let keys =
+        |n: usize| serde_json::Value::Object((0..n).map(|i| (format!("k{i}"), json!(i))).collect());
+    let kept = parse(json!({"score":2,"note":"fine"}));
     assert_eq!(
-        parsed.stance,
-        Some(Stance {
-            position: Position::Revised,
-            verdict: None,
-            notes: vec!["n".into()],
-        })
+        kept.annotations.map(Into::into),
+        Some(json!({"score":2,"note":"fine"}))
     );
-    let parsed = result::parse(
-        "```json\n{\"status\":\"done\",\"summary\":\"ok\",\"stance\":{\"position\":\"agree\",\"verdict\":\"reject\"}}\n```",
-    )
-    .unwrap();
-    assert_eq!(
-        (parsed.position(), parsed.verdict()),
-        (Position::Agree, Verdict::Reject)
-    );
-    let parsed = result::parse(
-        "```json\n{\"status\":\"done\",\"summary\":\"ok\",\"stance\":{\"position\":\"maybe\"}}\n```",
-    )
-    .unwrap();
-    assert_eq!(parsed.stance, None);
-    let schema = result::schema();
-    assert_eq!(
-        schema["properties"]["stance"]["properties"]["verdict"]["enum"],
-        json!(["pass", "return", "reject"])
-    );
-    assert!(!schema["required"]
-        .as_array()
+    assert!(parse(keys(result::ANNOTATIONS_KEYS)).annotations.is_some());
+    let big = "x".repeat(result::ANNOTATIONS_BYTES);
+    for bad in [
+        json!("text"),
+        json!(["a"]),
+        json!(null),
+        keys(result::ANNOTATIONS_KEYS + 1),
+        json!({"long": big}),
+    ] {
+        let parsed = parse(bad.clone());
+        assert_eq!(parsed.annotations, None, "{bad}");
+        assert_eq!(
+            (parsed.summary.as_str(), parsed.report.as_str()),
+            ("ok", "posted")
+        );
+        assert_eq!(parsed.unresolved, vec!["one".to_string()]);
+    }
+}
+
+/// What a backend enforcing structured output in strict mode (Codex) accepts:
+/// every object lists all its properties as required and forbids others.
+fn assert_strict(schema: &serde_json::Value, at: &str) {
+    if let Some(properties) = schema["properties"].as_object() {
+        assert_eq!(schema["additionalProperties"], json!(false), "{at}");
+        let mut required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{at}: no required"))
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        let mut keys: Vec<&str> = properties.keys().map(String::as_str).collect();
+        required.sort();
+        keys.sort();
+        assert_eq!(required, keys, "{at}");
+        for (key, value) in properties {
+            assert_strict(value, &format!("{at}.{key}"));
+        }
+    }
+    if let Some(items) = schema.get("items") {
+        assert_strict(items, &format!("{at}[]"));
+    }
+}
+
+/// Without a host sub-schema the worker schema and format note are 0.4's and
+/// ask for no `annotations`; with one, `annotations` is a required, nullable
+/// object of that shape. Both forms are valid in strict mode.
+#[test]
+fn an_injected_annotations_schema_appears_in_the_worker_schema() {
+    let bare = result::schema();
+    assert_eq!(result::schema_with(None), bare);
+    assert!(bare["properties"].get("annotations").is_none());
+    assert_strict(&bare, "schema");
+    assert_eq!(result::format_note(None), result::FORMAT_NOTE);
+    let line = |note: &str| -> serde_json::Value {
+        serde_json::from_str(note.lines().nth(2).unwrap()).unwrap()
+    };
+    assert_eq!(line(result::FORMAT_NOTE), bare);
+
+    let sub = json!({"properties":{"score":{"type":"integer"},"verdict":{"type":"string","enum":["pass","return"]}},"required":["score","verdict"]});
+    let schema = result::schema_with(Some(&sub));
+    assert_strict(&schema, "schema_with");
+    let annotations = &schema["properties"]["annotations"];
+    assert_eq!(annotations["type"], json!(["object", "null"]));
+    assert_eq!(annotations["additionalProperties"], json!(false));
+    assert_eq!(annotations["properties"], sub["properties"]);
+    let mut rest = schema.clone();
+    rest["properties"]
+        .as_object_mut()
         .unwrap()
-        .contains(&json!("stance")));
+        .remove("annotations");
+    rest["required"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|k| k != "annotations");
+    assert_eq!(rest, bare);
+    // An empty sub-schema is still a strict, nullable object.
+    assert_strict(&result::schema_with(Some(&json!({}))), "empty");
+    let note = result::format_note(Some(&sub));
+    assert_eq!(line(&note), schema);
+    assert!(note.starts_with(
+        &result::FORMAT_NOTE
+            .lines()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
+    assert!(note.ends_with("or null when none apply."));
 }

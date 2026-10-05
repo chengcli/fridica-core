@@ -1,6 +1,6 @@
 [package]
 name = "fridica-core"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.88"
 description = "Fridica's domain: threads, parent decisions and delegation, workers, machines and placement, delivery outcomes and attention policy"

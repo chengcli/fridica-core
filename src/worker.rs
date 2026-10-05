@@ -65,48 +65,10 @@ pub struct WorkerResult {
     pub question: String,
     #[serde(default)]
     pub report: String,
-    /// The worker's stance on the work it was given; absent from older workers.
+    /// Fields the host asked for (`result::schema_with`); round-tripped, never
+    /// interpreted here. Absent from older workers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stance: Option<Stance>,
-}
-/// The defaults for a missing stance are the driver's convention (fridica-core#1).
-impl WorkerResult {
-    /// The stated position; a missing stance counts as `disagree`.
-    pub fn position(&self) -> Position {
-        self.stance
-            .as_ref()
-            .map_or(Position::Disagree, |s| s.position)
-    }
-    /// The stated verdict; a missing stance or verdict counts as `return`.
-    pub fn verdict(&self) -> Verdict {
-        self.stance
-            .as_ref()
-            .and_then(|s| s.verdict)
-            .unwrap_or(Verdict::Return)
-    }
-}
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Stance {
-    pub position: Position,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<Verdict>,
-    #[serde(default)]
-    pub notes: Vec<String>,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Position {
-    Agree,
-    Disagree,
-    Revised,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Verdict {
-    Pass,
-    Return,
-    Reject,
+    pub annotations: Option<serde_json::Map<String, Value>>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkerRecord {

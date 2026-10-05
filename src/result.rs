@@ -10,6 +10,56 @@ pub const SUMMARIZE_PROMPT: &str="Return only the WorkerResult JSON object for t
 pub fn schema() -> Value {
     serde_json::from_str(SCHEMA_JSON).expect("embedded worker schema")
 }
+/// `annotations` caps: at most 32 top-level keys and 8 KiB of compact JSON, so
+/// a host's fields stay small beside the 4000-character report.
+pub const ANNOTATIONS_KEYS: usize = 32;
+pub const ANNOTATIONS_BYTES: usize = 8192;
+/// The `annotations` entry for a host's sub-schema. Backends that enforce a
+/// structured output in strict mode (Codex) require every property to be
+/// listed in `required` and every object to forbid additional properties, so
+/// the entry is required and nullable (`null` when nothing applies), and the
+/// sub-schema is an object without additional properties unless it says
+/// otherwise. A host's own sub-schema must follow the same rules.
+fn annotations(sub: &Value) -> Value {
+    let mut sub = sub.clone();
+    if let Some(o) = sub.as_object_mut() {
+        o.insert("type".into(), serde_json::json!(["object", "null"]));
+        o.entry("additionalProperties").or_insert(false.into());
+        o.entry("properties").or_insert(serde_json::json!({}));
+        o.entry("required").or_insert(serde_json::json!([]));
+    }
+    sub
+}
+/// The worker schema, with the host's `annotations` sub-schema when one is
+/// given. Without one the schema has no `annotations` and is [`schema`]
+/// itself; core never reads the fields a host asks for.
+pub fn schema_with(annotations_schema: Option<&Value>) -> Value {
+    let mut s = schema();
+    if let Some(sub) = annotations_schema {
+        s["properties"]["annotations"] = annotations(sub);
+        if let Some(required) = s["required"].as_array_mut() {
+            required.push("annotations".into());
+        }
+    }
+    s
+}
+/// `FORMAT_NOTE` for the same schema: without a sub-schema it is
+/// `FORMAT_NOTE` itself; with one, the schema line includes `annotations` and
+/// a line says how to fill it.
+pub fn format_note(annotations_schema: Option<&Value>) -> String {
+    let Some(sub) = annotations_schema else {
+        return FORMAT_NOTE.into();
+    };
+    let schema = serde_json::to_string(&schema_with(Some(sub))).expect("worker schema");
+    let mut lines: Vec<String> = FORMAT_NOTE.lines().map(str::to_owned).collect();
+    if let Some(line) = lines.get_mut(2) {
+        *line = schema;
+    }
+    lines.push(
+        "- annotations: only the fields the schema above asks for, or null when none apply.".into(),
+    );
+    lines.join("\n")
+}
 fn text(v: &Value, limit: usize) -> String {
     v.as_str().unwrap_or("").chars().take(limit).collect()
 }
@@ -85,21 +135,14 @@ pub fn coerce(v: &Value) -> Option<WorkerResult> {
             .collect(),
         question: text(&v["question"], 2000),
         report: text(&v["report"], REPORT_LIMIT),
-        // Repaired field by field: an invalid verdict or note is dropped, the position kept.
-        stance: serde_json::from_value::<Position>(v["stance"]["position"].clone())
-            .ok()
-            .map(|position| Stance {
-                position,
-                verdict: serde_json::from_value(v["stance"]["verdict"].clone()).ok(),
-                notes: v["stance"]["notes"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|v| v.is_string())
-                    .take(30)
-                    .map(|v| text(v, 500))
-                    .collect(),
-            }),
+        // Kept or dropped whole: a non-object or one over the caps is dropped.
+        annotations: v["annotations"]
+            .as_object()
+            .filter(|m| {
+                m.len() <= ANNOTATIONS_KEYS
+                    && serde_json::to_string(m).is_ok_and(|s| s.len() <= ANNOTATIONS_BYTES)
+            })
+            .cloned(),
     })
 }
 struct Fence {

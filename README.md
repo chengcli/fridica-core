@@ -7,6 +7,8 @@ It is the domain crate of [Fridica](https://github.com/chengcli/fridica), a
 Slack agent that delegates work to Claude Code and Codex workers on your
 machines; the `fridica` crate re-exports it as `fridica::core`.
 
+fridica-core: general mechanism only; no names, enums, defaults or prompt text specific to one host.
+
 - **No I/O.** Only serde, regex, sha2, uuid and unicode-casefold; `unsafe` is
   forbidden. Storage, Slack, worker processes and config loading belong to the
   host, which calls into these types and implements the adapter traits below.
@@ -38,7 +40,7 @@ machines; the `fridica` crate re-exports it as `fridica::core`.
 - `placement`: sticky, load-aware machine and workspace selection, and the
   fixed load probe's parser and assessment.
 - `worker`, `result`, `approvals`: worker records, jobs, results and their
-  format, failures (including `RateLimited`, temporary, with a reset time),
+  format (with the host's optional `annotations` sub-schema), failures (including `RateLimited`, temporary, with a reset time),
   approval requests and automatic command rules.
 - `delivery`: outbox posts and delivery outcomes, and the `Delivery` trait.
 - `egress`: the deny list and the scan of text about to be published.
