@@ -869,3 +869,64 @@ pub async fn a_thread_driver_is_set_audited_and_fences_turns<B: Backend>() {
         serde_json::json!({"from":"parent","to":"external"})
     );
 }
+
+/// An owner retry puts the item of a thread's last failed decision back in
+/// the queue and unblocks the thread, once; a thread whose last decision did
+/// not fail has nothing to retry (fridica#136).
+pub async fn a_failed_decision_is_retried_once_by_the_owner<B: Backend>() {
+    let (_guard, store) = B::fresh().await;
+    let (nothing, retried, again, attempts, status, claimed) = store
+        .transact(|u| {
+            u.open_thread("T:C:1", "T", "C", "1", 1.0)?;
+            let ok = u.queue_message("T:C:1", "e1", 1.0)?;
+            u.claim_next("T:C:1", 1.0)?;
+            u.record_parent_calls("T:C:1", ok, "{}", &[parent_turn("decide", "", None)], 2.0)?;
+            u.finish_turn(ok, None, "respond: addressed")?;
+            let nothing = u.retry_failed_turn("T:C:1")?;
+            let failed = u.queue_message("T:C:1", "e2", 3.0)?;
+            u.claim_next("T:C:1", 3.0)?;
+            u.record_parent_calls(
+                "T:C:1",
+                failed,
+                "{}",
+                &[parent_turn(
+                    "decide",
+                    "parent_unavailable",
+                    Some(r#"{"failure":"parent_exit_1"}"#),
+                )],
+                4.0,
+            )?;
+            u.close_turn(&TurnClose {
+                session: "T:C:1".into(),
+                status: "blocked".into(),
+                reply_key: String::new(),
+                turn: 1,
+                waiting: 0,
+                quiet: 0,
+                hash: String::new(),
+                summary: String::new(),
+                now: 4.0,
+            })?;
+            u.finish_turn(failed, None, "respond: addressed")?;
+            let retried = u.retry_failed_turn("T:C:1")?;
+            let again = u.retry_failed_turn("T:C:1")?;
+            let attempts = u.inbox_attempts(failed)?;
+            let status = u.thread("T:C:1")?.unwrap().status;
+            let claimed = u.claim_next("T:C:1", 5.0)?.map(|item| item.id);
+            Ok((
+                nothing,
+                Some(failed) == retried,
+                again,
+                attempts,
+                status,
+                claimed == Some(failed),
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(nothing, None);
+    assert!(retried && claimed);
+    assert_eq!(again, None);
+    assert_eq!(attempts, (0, "pending".into()));
+    assert_eq!(status, "complete");
+}

@@ -47,6 +47,13 @@ pub trait ThreadControls {
     fn restart_turns(&mut self, session: &str) -> Result<()>;
     /// On an owner instruction: a blocked thread is complete again.
     fn unblock(&mut self, session: &str) -> Result<()>;
+    /// On an owner retry: when the thread's last decision call failed because
+    /// the parent was unavailable or still invalid after repair, put that
+    /// call's finished inbox item back to pending (attempts reset, due now)
+    /// and make a blocked thread complete again, so the item gets a new
+    /// parent turn (fridica#136). Returns the item, or `None` when the last
+    /// decision did not fail that way or its item is not finished.
+    fn retry_failed_turn(&mut self, session: &str) -> Result<Option<i64>>;
     /// Let the thread's held worker results and interruptions through now.
     fn release_worker_results(&mut self, session: &str) -> Result<()>;
     /// Clean a thread: wipe its messages, summary, decisions and owner

@@ -106,6 +106,7 @@ macro_rules! conformance_tests {
             a_committed_turn_records_its_effects_once_fenced,
             a_thread_without_refused_posts_has_none_to_rewrite,
             a_thread_driver_is_set_audited_and_fences_turns,
+            a_failed_decision_is_retried_once_by_the_owner,
             // work
             the_outbox_queues_once_and_fences_delivery_attempts,
             a_post_being_sent_is_confirmed_once,

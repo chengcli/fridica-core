@@ -445,6 +445,13 @@ fn the_tolerant_parser_drops_invalid_annotations_and_keeps_the_rest() {
 /// What a backend enforcing structured output in strict mode (Codex) accepts:
 /// every object lists all its properties as required and forbids others.
 fn assert_strict(schema: &serde_json::Value, at: &str) {
+    if let Some(alternatives) = schema["anyOf"].as_array() {
+        for (i, alternative) in alternatives.iter().enumerate() {
+            assert_strict(alternative, &format!("{at}|{i}"));
+        }
+        return;
+    }
+    assert!(schema.get("type").is_some(), "{at}: no type");
     if let Some(properties) = schema["properties"].as_object() {
         assert_eq!(schema["additionalProperties"], json!(false), "{at}");
         let mut required: Vec<&str> = schema["required"]
@@ -510,4 +517,32 @@ fn an_injected_annotations_schema_appears_in_the_worker_schema() {
             .join("\n")
     ));
     assert!(note.ends_with("or null when none apply."));
+}
+
+/// Every parent schema is valid where it is enforced strictly (Codex), with
+/// and without choices: an empty choice set, such as a thread with no linked
+/// threads to hand off to, still gives every node a type (fridica#136).
+#[test]
+fn parent_schemas_are_valid_for_strict_structured_output() {
+    use fridica_core::parent::schema::{self, Choices};
+    assert_strict(&schema::triage(), "triage");
+    assert_strict(&schema::debrief(), "debrief");
+    let none = schema::decision(&Choices::default());
+    assert_strict(&none, "decision");
+    assert_eq!(none["properties"]["handoffs"]["maxItems"], 0);
+    assert_eq!(
+        none["properties"]["handoffs"]["items"]["properties"]["thread"]["enum"],
+        json!([""])
+    );
+    let some = schema::decision(&Choices {
+        delegable: vec!["w1".into()],
+        controllable: vec!["w1".into()],
+        forkable: vec!["w1".into()],
+        fetch_repos: vec!["o/r".into()],
+        tags: vec!["gpu".into()],
+        files: vec!["F1".into()],
+        threads: vec!["T:C:2".into()],
+        roles: vec!["reviewer".into()],
+    });
+    assert_strict(&some, "decision with choices");
 }

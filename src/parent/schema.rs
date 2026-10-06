@@ -112,13 +112,18 @@ impl Choices {
     }
 }
 /// Hand-offs may target only the linked threads; with none, the list is empty.
+/// The item schema stays a typed object either way: backends that enforce the
+/// schema strictly (Codex) refuse an untyped `items` (fridica#136).
 fn handoffs(threads: &[String]) -> Value {
-    if threads.is_empty() {
-        return json!({"type":"array","maxItems":0,"items":{}});
-    }
-    let item = object(json!({"thread":{"type":"string","enum":threads},
+    let targets = if threads.is_empty() {
+        choice(&[])
+    } else {
+        json!({"type":"string","enum":threads})
+    };
+    let item = object(json!({"thread":targets,
         "kind":{"type":"string","enum":["context","post"]},"note":string(),"answers":strings()}));
-    json!({"type":"array","maxItems":3,"items":item})
+    let most = if threads.is_empty() { 0 } else { 3 };
+    json!({"type":"array","maxItems":most,"items":item})
 }
 pub fn decision(choices: &Choices) -> Value {
     let roles: Vec<String> = std::iter::once("general".to_string())
