@@ -5,7 +5,6 @@ pub mod registry;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -17,7 +16,6 @@ pub struct Parent {
     pub timeout: f64,
     pub context_chars: usize,
     pub default_machine: String,
-    pub repos: Option<PathBuf>,
 }
 impl Default for Parent {
     fn default() -> Self {
@@ -29,7 +27,6 @@ impl Default for Parent {
             timeout: 180.,
             context_chars: 24000,
             default_machine: String::new(),
-            repos: None,
         }
     }
 }
