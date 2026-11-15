@@ -546,3 +546,14 @@ fn parent_schemas_are_valid_for_strict_structured_output() {
     });
     assert_strict(&some, "decision with choices");
 }
+
+#[test]
+fn parent_configuration_has_no_repository_list() {
+    let parent = fridica_core::config::Parent::default();
+    let data = serde_json::to_value(parent).unwrap();
+    assert!(data.get("repos").is_none());
+    assert!(serde_json::from_value::<fridica_core::config::Parent>(
+        serde_json::json!({"repos": "retired-list.toml"})
+    )
+    .is_err());
+}
