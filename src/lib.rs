@@ -12,6 +12,7 @@ pub mod placement;
 pub mod policy;
 pub mod render;
 pub mod result;
+pub mod secret;
 pub mod store;
 pub mod time;
 pub mod worker;
