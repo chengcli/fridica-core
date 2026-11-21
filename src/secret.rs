@@ -56,3 +56,8 @@ impl From<KeyringRef> for String {
         )
     }
 }
+
+#[cfg(feature = "native-secrets")]
+mod native;
+#[cfg(feature = "native-secrets")]
+pub use native::NativeStore;

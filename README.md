@@ -146,3 +146,11 @@ assert!(scan("ordinary text", &deny).is_empty());
 ## License
 
 MIT
+
+## Credentials
+
+`secret::SecretStore` defines lookup, replacement, deletion, and enumeration
+of names. Enable the `native-secrets` feature to use `secret::NativeStore` with
+macOS Keychain or the default collection of a Linux Secret Service session.
+`secret::KeyringRef` represents a configuration reference such as
+`keyring://slack/user-token`. Resolved credential values belong to the caller.
