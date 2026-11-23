@@ -1,6 +1,6 @@
 [package]
 name = "fridica-core"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 rust-version = "1.88"
 description = "Fridica's domain: threads, parent decisions and delegation, workers, machines and placement, delivery outcomes and attention policy"
@@ -21,6 +21,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Only for the `conformance` feature: it runs each check on a runtime of its own.
 tokio = { version = "1", features = ["rt"], optional = true }
 
+users = { version = "0.11", optional = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3", optional = true }
 
@@ -28,7 +30,7 @@ security-framework = { version = "3", optional = true }
 secret-service = { version = "5", features = ["rt-async-io-crypto-rust"], optional = true }
 
 [features]
-native-secrets = ["dep:security-framework", "dep:secret-service"]
+native-secrets = ["dep:users", "dep:security-framework", "dep:secret-service"]
 # `store::conformance`: the storage contract's checks, for backends' tests.
 conformance = ["dep:tokio"]
 
