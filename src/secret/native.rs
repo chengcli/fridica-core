@@ -1,5 +1,5 @@
 use super::SecretStore;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
@@ -9,6 +9,14 @@ mod platform;
 mod platform;
 
 const SERVICE: &str = "fridica";
+const SERVICE_PREFIX: &str = "fridica:";
+
+fn account() -> Result<String> {
+    users::get_current_username()
+        .and_then(|s| s.into_string().ok())
+        .context("cannot determine the local account name")
+}
+
 /// Current user’s OS-backed Fridica credential store.
 pub struct NativeStore;
 

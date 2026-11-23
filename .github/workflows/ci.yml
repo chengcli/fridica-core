@@ -17,4 +17,14 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
+      - name: Test migration with GNOME Keyring
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnome-keyring dbus-daemon
+          export XDG_DATA_HOME="$(mktemp -d)" XDG_RUNTIME_DIR="$(mktemp -d)"
+          dbus-run-session -- bash -euo pipefail -c '
+            printf "%s" "temporary-ci-keyring" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --features native-secrets rotates_legacy_gnome_keyring_entry -- --ignored
+          '
       - run: cargo publish --dry-run --locked
